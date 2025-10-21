@@ -9,7 +9,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
 using WinGetStudio.Activation;
 using WinGetStudio.Contracts.Services;
-using WinGetStudio.Models;
 using WinGetStudio.Services;
 using WinGetStudio.Services.Core.Extensions;
 using WinGetStudio.Services.DesiredStateConfiguration.Contracts;
@@ -73,7 +72,6 @@ public partial class App : Application
                 services.AddTransient<ActivationHandler<Windows.ApplicationModel.Activation.LaunchActivatedEventArgs>, DefaultActivationHandler>();
 
                 // Other Activation Handlers
-                services.AddTransient<IActivationHandler, ConfigurationFileActivationHandler>();
                 services.AddTransient<IActivationHandler, FileActivationHandler>();
 
                 // Services
@@ -85,6 +83,7 @@ public partial class App : Application
                 services.AddSingleton<IAppFrameNavigationService, AppFrameNavigationService>();
                 services.AddSingleton<IConfigurationFrameNavigationService, ConfigurationFrameNavigationService>();
                 services.AddSingleton<IAppInfoService, AppInfoService>();
+                services.AddSingleton<IConfigurationManager, ConfigurationManager>();
 
                 // Dispatcher Queue
                 services.AddSingleton(_dispatcherQueue);
@@ -124,6 +123,7 @@ public partial class App : Application
                 services.AddTransient<NotificationPaneViewModel>();
                 services.AddTransient<LoadingProgressBarViewModel>();
                 services.AddTransient<ResourceExplorerViewModel>();
+                services.AddTransient<ResourceAutoSuggestBoxViewModel>();
 
                 // Factories
                 services.AddSingleton<ValidationViewModelFactory>(sp => () => ActivatorUtilities.CreateInstance<ValidationViewModel>(sp));

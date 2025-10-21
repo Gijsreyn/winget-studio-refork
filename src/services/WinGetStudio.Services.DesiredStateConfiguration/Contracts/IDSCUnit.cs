@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.Management.Configuration;
+using WinGetStudio.Services.DesiredStateConfiguration.Models;
 
 namespace WinGetStudio.Services.DesiredStateConfiguration.Contracts;
 
@@ -32,7 +34,7 @@ public interface IDSCUnit
     /// <summary>
     /// Gets a value indicating whether the operation requires elevated permissions to execute.
     /// </summary>
-    public bool RequiresElevation { get; }
+    public SecurityContext SecurityContext { get; }
 
     /// <summary>
     /// Gets the intent of how this configuration unit will be used.
@@ -47,17 +49,17 @@ public interface IDSCUnit
     /// <summary>
     /// Gets the <see cref="Id"/> values of the configuration units that this unit depends on.
     /// </summary>
-    public IList<string> Dependencies { get; }
+    public ISet<string> Dependencies { get; }
 
     /// <summary>
     /// Gets the values that are for use by the configuration unit itself.
     /// </summary>
-    public IList<KeyValuePair<string, object>> Settings { get; }
+    public DSCPropertySet Settings { get; }
 
     /// <summary>
     /// Gets the metadata properties associated with the configuration unit.
     /// </summary>
-    public IList<KeyValuePair<string, string>> Metadata { get; }
+    public DSCPropertySet Metadata { get; }
 
     /// <summary>
     /// Gets the details of the configuration unit.

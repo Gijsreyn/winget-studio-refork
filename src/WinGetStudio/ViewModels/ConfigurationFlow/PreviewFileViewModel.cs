@@ -1,334 +1,533 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.Diagnostics.CodeAnalysis;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Management.Configuration;
 using Windows.Storage;
-using Windows.Storage.Pickers;
-using WinGetStudio.Common.Windows.FileDialog;
 using WinGetStudio.Contracts.Services;
-using WinGetStudio.Contracts.ViewModels;
+using WinGetStudio.Exceptions;
 using WinGetStudio.Models;
 using WinGetStudio.Services.DesiredStateConfiguration.Contracts;
 using WinGetStudio.Services.DesiredStateConfiguration.Exceptions;
 using WinGetStudio.Services.DesiredStateConfiguration.Models;
-using WinRT.Interop;
+using WingetStudio.Services.VisualFeedback.Contracts;
+using WingetStudio.Services.VisualFeedback.Models;
 
 namespace WinGetStudio.ViewModels.ConfigurationFlow;
 
-public partial class PreviewFileViewModel : ObservableRecipient, INavigationAware
+public partial class PreviewFileViewModel : ObservableRecipient
 {
-    private readonly IConfigurationFrameNavigationService _navigationService;
-    private readonly IDSC _dsc;
-    private readonly IDSCSetBuilder _dscSetBuilder;
-    private readonly IStringLocalizer<PreviewFileViewModel> _localizer;
     private readonly ILogger<PreviewFileViewModel> _logger;
-    private IDSCSet? _dscSet;
-    private string _yaml = string.Empty;
+    private readonly IStringLocalizer<PreviewFileViewModel> _localizer;
+    private readonly IUIFeedbackService _ui;
+    private readonly IDSC _dsc;
+    private readonly IAppFrameNavigationService _appNavigation;
+    private readonly IConfigurationFrameNavigationService _configNavigation;
+    private readonly IConfigurationManager _manager;
 
-    public ObservableCollection<DSCConfigurationUnitViewModel> ConfigurationUnits { get; } = new();
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsEditPanelVisible))]
-    public partial DSCConfigurationUnitViewModel? SelectedUnit { get; set; }
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Content))]
-    public partial IDSCFile? DscFile { get; set; }
+    public IReadOnlyList<UnitSecurityContext> SecurityContexts => UnitSecurityContext.All;
 
     [ObservableProperty]
-    public partial bool LoadingUnits { get; set; } = true;
+    [NotifyPropertyChangedFor(nameof(IsEmptyState))]
+    [NotifyPropertyChangedFor(nameof(CanApplyConfiguration))]
+    [NotifyPropertyChangedFor(nameof(CanApplyConfigurationOrViewResult))]
+    [NotifyPropertyChangedFor(nameof(CanValidateConfiguration))]
+    [NotifyPropertyChangedFor(nameof(CanTestConfiguration))]
+    [NotifyPropertyChangedFor(nameof(CanSaveConfigurationAs))]
+    [NotifyCanExecuteChangedFor(nameof(AddResourceCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyConfigurationCommand))]
+    [NotifyCanExecuteChangedFor(nameof(TestConfigurationCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ValidateConfigurationCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleEditModeCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveConfigurationCommand))]
+    public partial SetViewModel? ConfigurationSet { get; set; }
 
     [ObservableProperty]
-    public partial string FilePath { get; set; } = string.Empty;
+    [NotifyPropertyChangedFor(nameof(IsUnitSelected))]
+    public partial Tuple<UnitViewModel, UnitViewModel>? SelectedUnit { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsConfigurationLoaded))]
-    public partial bool IsInEditMode { get; set; }
+    public partial bool IsEditMode { get; set; }
 
     [ObservableProperty]
-    public partial bool IsStateChanged { get; set; } = false;
+    public partial bool IsCodeView { get; set; }
 
-    public bool CanApply => ConfigurationUnits.Count > 0 && !IsStateChanged;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEmptyState))]
+    public partial bool IsConfigurationLoading { get; set; }
 
-    public bool IsEditPanelVisible => SelectedUnit != null;
+    [MemberNotNullWhen(true, nameof(ConfigurationSet))]
+    public bool IsConfigurationLoaded => ConfigurationSet != null;
 
-    public bool IsConfigurationLoaded => ConfigurationUnits.Count > 0 || IsInEditMode;
+    public bool IsApplyInProgress => ActiveApplySet != null;
 
-    public string Content => DscFile == null ? string.Empty : DscFile.Content;
+    public bool IsReadOnlyMode => IsApplyInProgress;
 
-    partial void OnIsInEditModeChanging(bool value)
-    {
-        _ = UpdateUnits();
-    }
+    public bool IsUnitSelected => SelectedUnit != null;
 
-    partial void OnIsStateChangedChanged(bool value)
-    {
-        OnPropertyChanged(nameof(CanApply));
-    }
+    public bool IsEmptyState => !IsConfigurationLoading && !IsConfigurationLoaded;
 
-    private async Task UpdateUnits()
-    {
-        LoadingUnits = true;
-        if (IsInEditMode)
-        {
-            foreach (var u in ConfigurationUnits)
-            {
-                u.UpdateUnit();
-                if (u.ConfigurationUnit is EditableDSCUnit editableUnit)
-                {
-                    _dscSetBuilder.UpdateUnit(editableUnit);
-                }
-            }
+    public bool CanAddUnit => IsConfigurationLoaded && !IsReadOnlyMode;
 
-            ConfigurationUnits.Clear();
-            var dscSet = await _dscSetBuilder.BuildAsync();
-            foreach (var u in dscSet.Units)
-            {
-                ConfigurationUnits.Add(new(u, _logger));
-            }
+    public bool CanUpdateUnit => !IsReadOnlyMode;
 
-            _dsc.GetConfigurationUnitDetails(dscSet);
-        }
-        else
-        {
-            ConfigurationUnits.Clear();
-            foreach (var u in _dscSetBuilder.Units)
-            {
-                ConfigurationUnits.Add(new(u, _logger));
-            }
-        }
+    public bool CanDeleteUnit => !IsReadOnlyMode;
 
-        LoadingUnits = false;
-    }
+    public bool CanToggleEditMode => IsConfigurationLoaded;
 
-    partial void OnSelectedUnitChanged(DSCConfigurationUnitViewModel? oldValue, DSCConfigurationUnitViewModel? newValue)
-    {
-        OnPropertyChanged(nameof(IsEditPanelVisible));
-        IsStateChanged = true;
-    }
+    public bool CanApplyConfiguration => ConfigurationSet?.Units.Count > 0 && !IsApplyInProgress;
+
+    public bool CanViewResults => IsApplyInProgress;
+
+    public bool CanApplyConfigurationOrViewResult => CanApplyConfiguration || CanViewResults;
+
+    public bool CanTestConfiguration => ConfigurationSet?.Units.Count > 0 && !IsApplyInProgress;
+
+    public bool CanValidateConfiguration => ConfigurationSet?.Units.Count > 0 && !IsApplyInProgress;
+
+    public bool CanSaveConfiguration => IsConfigurationLoaded && ConfigurationSet.CanSave && !IsReadOnlyMode;
+
+    public bool CanSaveConfigurationAs => IsConfigurationLoaded && !IsReadOnlyMode;
+
+    public bool CanOpenConfigurationFile => !IsApplyInProgress;
+
+    public bool CanCreateNewConfiguration => !IsApplyInProgress;
+
+    public ApplySetViewModel? ActiveApplySet => _manager.ActiveSetApplyState.ActiveApplySet;
 
     public PreviewFileViewModel(
-        IConfigurationFrameNavigationService navigationService,
-        IDSC dsc,
-        IDSCSetBuilder setBuilder,
+        ILogger<PreviewFileViewModel> logger,
         IStringLocalizer<PreviewFileViewModel> localizer,
-        ILogger<PreviewFileViewModel> logger)
+        IUIFeedbackService ui,
+        IDSC dsc,
+        IAppFrameNavigationService appNavigation,
+        IConfigurationFrameNavigationService configNavigation,
+        IConfigurationManager manager)
     {
-        _navigationService = navigationService;
-        _dsc = dsc;
-        _dscSetBuilder = setBuilder;
-        _localizer = localizer;
         _logger = logger;
-        ConfigurationUnits.CollectionChanged += (_, __) =>
-        {
-            OnPropertyChanged(nameof(CanApply));
-            OnPropertyChanged(nameof(IsConfigurationLoaded));
-        };
+        _localizer = localizer;
+        _ui = ui;
+        _dsc = dsc;
+        _appNavigation = appNavigation;
+        _configNavigation = configNavigation;
+        _manager = manager;
     }
 
-    public void OnNavigatedTo(object parameter)
+    /// <summary>
+    /// Opens the configuration file.
+    /// </summary>
+    /// <param name="file">The configuration file to open.</param>
+    public async Task OpenConfigurationFileAsync(StorageFile file)
     {
-        if (parameter is ConfigurationPageParameter configParameter)
-        {
-            if (configParameter.DSCSet != null)
-            {
-                _dsc.GetConfigurationUnitDetails(configParameter.DSCSet);
-                _dscSetBuilder.ImportSet(configParameter.DSCSet);
-                _dscSet = configParameter.DSCSet;
-            }
-            else
-            {
-                _dscSet = new EditableDSCSet();
-            }
-
-            if (configParameter.ResetDSCSet)
-            {
-                _dscSetBuilder.ClearUnits();
-                ConfigurationUnits.Clear();
-            }
-
-            _ = UpdateUnits();
-        }
-        else if (parameter is string filePath)
-        {
-            _ = ImportDSCSetFromPathAsync(filePath);
-        }
-        else
-        {
-            _ = UpdateUnits();
-        }
-
-        FilePath = _dscSetBuilder.TargetFilePath;
-    }
-
-    public void OnNavigatedFrom()
-    {
-        // No-op
-    }
-
-    private async Task ImportDSCSetFromPathAsync(string path)
-    {
-        DscFile = await DSCFile.LoadAsync(path);
-        var dscSet = await _dsc.OpenConfigurationSetAsync(DscFile);
-        FilePath = path;
-        _dscSetBuilder.ImportSet(dscSet);
-        _dscSet = dscSet;
-        _dscSetBuilder.TargetFilePath = path;
-
-        _ = UpdateUnits();
-    }
-
-    public async Task<bool> IsSaveRequiredAsync()
-    {
-        await UpdateUnits();
-        if (_yaml == await _dscSetBuilder.ConvertToYamlAsync())
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    [RelayCommand]
-    private async Task OnStoreYamlStateAsync()
-    {
-        _dscSet = await _dscSetBuilder.BuildAsync();
-        _yaml = await _dscSetBuilder.ConvertToYamlAsync();
-    }
-
-    [RelayCommand]
-    private async Task OnApplyAsync()
-    {
-        if (!_dscSetBuilder.IsEmpty())
-        {
-            _navigationService.NavigateTo<ApplyFileViewModel>(await _dscSetBuilder.BuildAsync());
-        }
-    }
-
-    [RelayCommand]
-    private async Task OnSaveAsync()
-    {
-        await UpdateUnits();
-        var yaml = await _dscSetBuilder.ConvertToYamlAsync();
-        if (FilePath == string.Empty)
-        {
-            await SaveAsCommand.ExecuteAsync(null);
-        }
-        else
-        {
-            File.WriteAllText(FilePath, yaml);
-        }
-
-        _yaml = yaml;
-        IsStateChanged = false;
-    }
-
-    [RelayCommand]
-    private async Task OnSaveAsAsync()
-    {
-        await UpdateUnits();
-        var yaml = await _dscSetBuilder.ConvertToYamlAsync();
-
-        var picker = new FileSavePicker();
-
-        // Get the HWND of the current window
-        var hwnd = WindowNative.GetWindowHandle(App.MainWindow);
-        InitializeWithWindow.Initialize(picker, hwnd);
-
-        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-        picker.SuggestedFileName = "configuration.winget";
-        picker.FileTypeChoices.Add("Winget Configuration File", new List<string>() { ".winget" });
-
-        StorageFile file = await picker.PickSaveFileAsync();
-        if (file != null)
-        {
-            _dscSetBuilder.TargetFilePath = file.Path;
-            FilePath = file.Path;
-            await FileIO.WriteTextAsync(file, yaml);
-        }
-
-        _yaml = yaml;
-        IsStateChanged = false;
-    }
-
-    [RelayCommand]
-    private void OnDiscard()
-    {
-        _dscSetBuilder.ImportSet(_dscSet);
-    }
-
-    [RelayCommand]
-    private async Task OnAddResourceAsync()
-    {
-        EditableDSCUnit u = new();
-        _dscSetBuilder.AddUnit(u);
-        ConfigurationUnits.Add(new(u, _logger));
-        await Task.CompletedTask;
-    }
-
-    [RelayCommand]
-    private async Task OnRemoveResourceAsync(DSCConfigurationUnitViewModel context)
-    {
-        if (context.ConfigurationUnit is EditableDSCUnit editableUnit)
-        {
-            _dscSetBuilder.RemoveUnit(editableUnit);
-            ConfigurationUnits.Remove(context);
-            if (SelectedUnit != null && context.InstanceId == SelectedUnit.InstanceId)
-            {
-                SelectedUnit = null;
-            }
-        }
-
-        await Task.CompletedTask;
-    }
-
-    [RelayCommand]
-    private async Task OnBrowseAsync()
-    {
-        var fileDialog = new WindowOpenFileDialog();
-        fileDialog.AddFileType("YAML files", ".yaml", ".yml", ".winget");
-        var file = await fileDialog.ShowAsync(App.MainWindow);
-
-        // Check if a file was selected
-        if (file == null)
-        {
-            return;
-        }
-
         try
         {
-            await ImportDSCSetFromPathAsync(file.Path);
+            _ui.ShowTaskProgress();
+            _logger.LogInformation($"Selected file: {file.Path}");
+            IsEditMode = false;
+            IsConfigurationLoading = true;
+            SelectedUnit = null;
+            ConfigurationSet = new SetViewModel(_logger, _localizer);
+            var dscFile = await DSCFile.LoadAsync(file.Path);
+            var dscSet = await _dsc.OpenConfigurationSetAsync(dscFile);
+            await ConfigurationSet.UseAsync(dscSet, dscFile);
+            _dsc.GetConfigurationUnitDetails(dscSet);
         }
-        catch (OpenConfigurationSetException e)
+        catch (OpenConfigurationSetException ex)
         {
-            _logger.LogError(e, $"Opening configuration set failed.");
+            _logger.LogError(ex, $"Opening configuration set failed");
+            _ui.ShowTimedNotification(ex.GetErrorMessage(_localizer), NotificationMessageSeverity.Error);
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            _logger.LogError(e, $"Unknown error while opening configuration set.");
+            _logger.LogError(ex, $"Unknown error while opening configuration set");
+            _ui.ShowTimedNotification(ex.Message, NotificationMessageSeverity.Error);
+        }
+        finally
+        {
+            IsConfigurationLoading = false;
+            _ui.HideTaskProgress();
         }
     }
 
-    private string GetErrorMessage(OpenConfigurationSetException exception)
+    public async Task SaveConfigurationAsAsync(string filePath)
     {
-        switch (exception.ResultCode.HResult)
+        if (IsConfigurationLoaded)
         {
-            case ConfigurationException.WingetConfigErrorInvalidFieldType:
-                return _localizer["ConfigurationFieldInvalidType", exception.Field];
-            case ConfigurationException.WingetConfigErrorInvalidFieldValue:
-                return _localizer["ConfigurationFieldInvalidValue", exception.Field, exception.Value];
-            case ConfigurationException.WingetConfigErrorMissingField:
-                return _localizer["ConfigurationFieldMissing", exception.Field];
-            case ConfigurationException.WingetConfigErrorUnknownConfigurationFileVersion:
-                return _localizer["ConfigurationFileVersionUnknown", exception.Value];
-            case ConfigurationException.WingetConfigErrorInvalidConfigurationFile:
-            case ConfigurationException.WingetConfigErrorInvalidYaml:
-            default:
-                return _localizer["ConfigurationFileInvalid"];
+            try
+            {
+                _ui.ShowTaskProgress();
+                _logger.LogInformation($"Saving configuration set as {filePath}");
+                await ConfigurationSet.SaveAsAsync(filePath);
+                _ui.ShowTimedNotification(_localizer["PreviewFile_SavedSuccessfully"], NotificationMessageSeverity.Success);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Saving configuration set failed");
+                _ui.ShowTimedNotification(_localizer["PreviewFile_SaveFailed", ex.Message], NotificationMessageSeverity.Error);
+            }
+            finally
+            {
+                // After saving as a new file, re-evaluate if saving is possible
+                SaveConfigurationCommand.NotifyCanExecuteChanged();
+                _ui.HideTaskProgress();
+            }
         }
+    }
+
+    [RelayCommand]
+    private void OnLoaded()
+    {
+        if (_manager.ActiveSetPreviewState.ActiveSet != null)
+        {
+            RestoreState();
+        }
+    }
+
+    [RelayCommand]
+    private void OnUnloaded()
+    {
+        CaptureState();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCreateNewConfiguration))]
+    private async Task OnNewConfigurationAsync()
+    {
+        try
+        {
+            _ui.ShowTaskProgress();
+            _logger.LogInformation($"Creating new configuration set");
+            SelectedUnit = null;
+            ConfigurationSet = new SetViewModel(_logger, _localizer);
+            await AddResourceAsync();
+        }
+        catch (DSCUnitValidationException ex)
+        {
+            _logger.LogError(ex, "Validation of the new configuration unit failed");
+            _ui.ShowTimedNotification(ex.Message, NotificationMessageSeverity.Error);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Creating new configuration set failed");
+            _ui.ShowTimedNotification(_localizer["PreviewFile_CreateNewConfigurationFailed", ex.Message], NotificationMessageSeverity.Error);
+        }
+        finally
+        {
+            _ui.HideTaskProgress();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSaveConfiguration))]
+    private async Task OnSaveConfigurationAsync()
+    {
+        if (IsConfigurationLoaded)
+        {
+            try
+            {
+                _ui.ShowTaskProgress();
+                _logger.LogInformation($"Saving configuration set");
+                await ConfigurationSet.SaveAsync();
+                _ui.ShowTimedNotification(_localizer["PreviewFile_SaveSuccessfulMessage"], NotificationMessageSeverity.Success);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Saving configuration set failed");
+                _ui.ShowTimedNotification(_localizer["PreviewFile_SaveFailedMessage", ex.Message], NotificationMessageSeverity.Error);
+            }
+            finally
+            {
+                _ui.HideTaskProgress();
+            }
+        }
+    }
+
+    [RelayCommand]
+    private async Task OnValidateUnitAsync(UnitViewModel unit)
+    {
+        if (IsConfigurationLoaded && unit != null)
+        {
+            _logger.LogInformation($"Validating unit {unit.Title}");
+            var unitClone = await unit.CloneAsync();
+            var param = new ValidateUnitNavigationContext(unitClone);
+            _appNavigation.NavigateTo<ValidationViewModel>(param);
+        }
+    }
+
+    [RelayCommand]
+    private async Task OnEditUnit(UnitViewModel unit)
+    {
+        _logger.LogInformation($"Editing unit {unit.Title}");
+        await EditUnitAsync(unit);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanDeleteUnit))]
+    private async Task OnDeleteSelectedUnitAsync()
+    {
+        if (IsConfigurationLoaded && SelectedUnit != null)
+        {
+            try
+            {
+                _ui.ShowTaskProgress();
+                _logger.LogInformation($"Deleting selected unit {SelectedUnit.Item1.Title}");
+                await ConfigurationSet.RemoveAsync(SelectedUnit.Item1);
+                SelectedUnit = null;
+                _ui.ShowTimedNotification(_localizer["PreviewFile_DeleteSuccessfulMessage"], NotificationMessageSeverity.Success);
+            }
+            catch (DSCUnitValidationException ex)
+            {
+                _logger.LogError(ex, "Validation of configuration units failed after deletion");
+                _ui.ShowTimedNotification(ex.Message, NotificationMessageSeverity.Error);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Deleting configuration unit failed");
+                _ui.ShowTimedNotification(_localizer["PreviewFile_DeleteFailedMessage", ex.Message], NotificationMessageSeverity.Error);
+            }
+            finally
+            {
+                _ui.HideTaskProgress();
+            }
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddUnit))]
+    private async Task OnAddResourceAsync()
+    {
+        try
+        {
+            _ui.ShowTaskProgress();
+            _logger.LogInformation($"Adding new resource");
+            await AddResourceAsync();
+        }
+        catch (DSCUnitValidationException ex)
+        {
+            _logger.LogError(ex, "Validation of the added configuration unit failed");
+            _ui.ShowTimedNotification(ex.Message, NotificationMessageSeverity.Error);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Adding new resource failed");
+            _ui.ShowTimedNotification(_localizer["PreviewFile_AddResourceFailedMessage", ex.Message], NotificationMessageSeverity.Error);
+        }
+        finally
+        {
+            _ui.HideTaskProgress();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanValidateConfiguration))]
+    private async Task OnValidateConfigurationAsync()
+    {
+        if (IsConfigurationLoaded)
+        {
+            try
+            {
+                _ui.ShowTaskProgress();
+                _logger.LogInformation($"Validating configuration code");
+                var dscFile = ConfigurationSet.GetLatestDSCFile();
+                var dscSet = await _dsc.OpenConfigurationSetAsync(dscFile);
+                await _dsc.ValidateSetAsync(dscSet);
+                _ui.ShowTimedNotification(_localizer["PreviewFile_ValidationSuccessfulMessage"], NotificationMessageSeverity.Success);
+            }
+            catch (OpenConfigurationSetException ex)
+            {
+                _logger.LogError(ex, $"Opening configuration set failed during validation");
+                _ui.ShowTimedNotification(ex.GetErrorMessage(_localizer), NotificationMessageSeverity.Error);
+            }
+            catch (ApplyConfigurationSetException ex)
+            {
+                _logger.LogError(ex, $"Validation of configuration set failed");
+                var title = ex.GetSetErrorMessage(_localizer);
+                var message = ex.GetUnitsSummaryMessage(_localizer);
+                _ui.ShowTimedNotification(title, message, NotificationMessageSeverity.Error);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Unknown error while validating configuration code");
+                _ui.ShowTimedNotification(ex.Message, NotificationMessageSeverity.Error);
+            }
+            finally
+            {
+                _ui.HideTaskProgress();
+            }
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanTestConfiguration))]
+    private async Task OnTestConfigurationAsync()
+    {
+        if (IsConfigurationLoaded)
+        {
+            try
+            {
+                _ui.ShowTaskProgress();
+                _logger.LogInformation($"Testing configuration code");
+                var dscFile = ConfigurationSet.GetLatestDSCFile();
+                var dscSet = await _dsc.OpenConfigurationSetAsync(dscFile);
+                var result = await _dsc.TestSetAsync(dscSet);
+                if (result.TestResult == ConfigurationTestResult.Positive)
+                {
+                    _ui.ShowTimedNotification(_localizer["Notification_MachineInDesiredState"], NotificationMessageSeverity.Success);
+                }
+                else
+                {
+                    _ui.ShowTimedNotification(_localizer["Notification_MachineNotInDesiredState"], NotificationMessageSeverity.Error);
+                }
+            }
+            catch (OpenConfigurationSetException ex)
+            {
+                _logger.LogError(ex, $"Opening configuration set failed during validation");
+                _ui.ShowTimedNotification(ex.GetErrorMessage(_localizer), NotificationMessageSeverity.Error);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Unknown error while validating configuration code");
+                _ui.ShowTimedNotification(ex.Message, NotificationMessageSeverity.Error);
+            }
+            finally
+            {
+                _ui.HideTaskProgress();
+            }
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanViewResults))]
+    private void OnViewResult()
+    {
+        if (IsApplyInProgress)
+        {
+            _configNavigation.NavigateTo<ApplyFileViewModel>();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanApplyConfiguration))]
+    private void OnApplyConfiguration()
+    {
+        if (!IsApplyInProgress)
+        {
+            CaptureState();
+            _configNavigation.NavigateTo<ApplyFileViewModel>();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanUpdateUnit))]
+    private async Task OnUpdateSelectedUnitAsync()
+    {
+        if (IsConfigurationLoaded && SelectedUnit != null)
+        {
+            try
+            {
+                _ui.ShowTaskProgress();
+                _logger.LogInformation($"Updating selected unit {SelectedUnit.Item1.Title}");
+                await ConfigurationSet.UpdateAsync(SelectedUnit.Item1, SelectedUnit.Item2);
+                _ui.ShowTimedNotification(_localizer["PreviewFile_ValidationFailedMessage"], NotificationMessageSeverity.Success);
+            }
+            catch (DSCUnitValidationException ex)
+            {
+                _logger.LogError(ex, "Validation of configuration unit failed");
+                _ui.ShowTimedNotification(ex.Message, NotificationMessageSeverity.Error);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Updating configuration unit failed");
+                _ui.ShowTimedNotification(_localizer["PreviewFile_UpdateFailedMessage", ex.Message], NotificationMessageSeverity.Error);
+            }
+            finally
+            {
+                _ui.HideTaskProgress();
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void OnCancelSelectedUnit()
+    {
+        _logger.LogInformation("Cancelling edit of selected unit");
+        SelectedUnit = null;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanToggleEditMode))]
+    private void OnToggleEditMode()
+    {
+        _logger.LogInformation($"Toggling edit mode to {(IsEditMode ? "ON" : "OFF")}");
+    }
+
+    [RelayCommand]
+    private void OnToggleCodeView()
+    {
+        _logger.LogInformation($"Toggling code view to {(IsCodeView ? "ON" : "OFF")}");
+    }
+
+    private async Task EditUnitAsync(UnitViewModel unit)
+    {
+        IsEditMode = true;
+        var unitClone = await unit.CloneAsync();
+        SelectedUnit = new(unit, unitClone);
+    }
+
+    private async Task AddResourceAsync()
+    {
+        if (IsConfigurationLoaded)
+        {
+            var unit = new UnitViewModel(_localizer) { Title = "Module/Resource" };
+            await ConfigurationSet.AddAsync(unit);
+            await EditUnitAsync(unit);
+        }
+    }
+
+    partial void OnConfigurationSetChanged(SetViewModel? oldValue, SetViewModel? newValue)
+    {
+        oldValue?.UnitsCollectionChanged -= OnConfigurationSetUnitsChanged;
+        newValue?.UnitsCollectionChanged += OnConfigurationSetUnitsChanged;
+    }
+
+    private void OnConfigurationSetUnitsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        // Notify validation
+        OnPropertyChanged(nameof(CanValidateConfiguration));
+        ValidateConfigurationCommand.NotifyCanExecuteChanged();
+
+        // Notify test
+        OnPropertyChanged(nameof(CanTestConfiguration));
+        TestConfigurationCommand.NotifyCanExecuteChanged();
+
+        // Notify apply
+        OnPropertyChanged(nameof(CanApplyConfiguration));
+        OnPropertyChanged(nameof(CanApplyConfigurationOrViewResult));
+        ApplyConfigurationCommand.NotifyCanExecuteChanged();
+
+        // Notify save
+        SaveConfigurationCommand.NotifyCanExecuteChanged();
+
+        // Notify save as
+        OnPropertyChanged(nameof(CanSaveConfigurationAs));
+    }
+
+    /// <summary>
+    /// Captures the current state to the configuration manager.
+    /// </summary>
+    private void CaptureState()
+    {
+        _logger.LogInformation("Capturing active configuration set");
+        _manager.ActiveSetPreviewState.ActiveSet = ConfigurationSet;
+        _manager.ActiveSetPreviewState.IsCodeView = IsCodeView;
+        _manager.ActiveSetPreviewState.IsEditMode = IsEditMode;
+        _manager.ActiveSetPreviewState.SelectedUnit = SelectedUnit;
+    }
+
+    /// <summary>
+    /// Restores the state from the configuration manager.
+    /// </summary>
+    private void RestoreState()
+    {
+        _logger.LogInformation("Restoring active configuration set");
+        ConfigurationSet = _manager.ActiveSetPreviewState.ActiveSet;
+        IsCodeView = _manager.ActiveSetPreviewState.IsCodeView;
+        IsEditMode = _manager.ActiveSetPreviewState.IsEditMode;
+        SelectedUnit = _manager.ActiveSetPreviewState.SelectedUnit;
     }
 }

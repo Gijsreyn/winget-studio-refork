@@ -10,7 +10,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Management.Configuration;
 using Windows.Foundation;
 using Windows.Storage.Streams;
-using WinGetStudio.Models;
 using WinGetStudio.Services.DesiredStateConfiguration.Contracts;
 using WinGetStudio.Services.DesiredStateConfiguration.Exceptions;
 using WinGetStudio.Services.DesiredStateConfiguration.Models;
@@ -27,11 +26,29 @@ internal sealed class DSCOperations : IDSCOperations
         _logger = logger;
     }
 
+    /// <inheritdoc/>
     public async Task<IDSCSet> OpenConfigurationSetAsync(IDSCFile file)
     {
         var processor = await CreateConfigurationProcessorAsync(DSCv3DynamicRuntimeHandlerIdentifier);
         var outOfProcResult = await OpenConfigurationSetAsync(file, processor);
         return new DSCSet(processor, outOfProcResult);
+    }
+
+    /// <inheritdoc />
+    public IAsyncOperationWithProgress<IDSCApplySetResult, IDSCSetChangeData> ValidateSetAsync(IDSCSet inputSet)
+    {
+        if (inputSet is not DSCSet dscSet)
+        {
+            throw new ArgumentException($"{nameof(inputSet)} must be of type {nameof(DSCSet)}", nameof(inputSet));
+        }
+
+        return AsyncInfo.Run<IDSCApplySetResult, IDSCSetChangeData>(async (cancellationToken, progress) =>
+        {
+            _logger.LogInformation("Starting to validate configuration set");
+            var inProcResult = await ApplySetInternalAsync(progress, dscSet, ApplyConfigurationSetFlags.PerformConsistencyCheckOnly);
+            _logger.LogInformation($"Validate configuration finished.");
+            return inProcResult;
+        });
     }
 
     /// <inheritdoc />
@@ -45,12 +62,29 @@ internal sealed class DSCOperations : IDSCOperations
         return AsyncInfo.Run<IDSCApplySetResult, IDSCSetChangeData>(async (cancellationToken, progress) =>
         {
             _logger.LogInformation("Starting to apply configuration set");
-            var task = dscSet.Processor.ApplySetAsync(dscSet.ConfigSet, ApplyConfigurationSetFlags.None);
-            task.Progress += (sender, args) => progress.Report(new DSCSetChangeData(args));
-            var outOfProcResult = await task;
-            var inProcResult = new DSCApplySetResult(inputSet, outOfProcResult);
+            var inProcResult = await ApplySetInternalAsync(progress, dscSet, ApplyConfigurationSetFlags.None);
             _logger.LogInformation($"Apply configuration finished.");
             return inProcResult;
+        });
+    }
+
+    /// <inheritdoc/>
+    public IAsyncOperationWithProgress<IDSCTestSetResult, IDSCTestUnitResult> TestSetAsync(IDSCSet inputSet)
+    {
+        if (inputSet is not DSCSet dscSet)
+        {
+            throw new ArgumentException($"{nameof(inputSet)} must be of type {nameof(DSCSet)}", nameof(inputSet));
+        }
+
+        return AsyncInfo.Run<IDSCTestSetResult, IDSCTestUnitResult>(async (cancellationToken, progress) =>
+        {
+            _logger.LogInformation("Starting to test configuration set");
+            var task = dscSet.Processor.TestSetAsync(dscSet.ConfigSet);
+            task.Progress += (sender, args) => progress.Report(new DSCTestUnitResult(args));
+            var outOfProcResult = await task;
+            var result = new DSCTestSetResult(outOfProcResult);
+            _logger.LogInformation($"Test configuration finished with result: {result.TestResult}");
+            return result;
         });
     }
 
@@ -88,62 +122,45 @@ internal sealed class DSCOperations : IDSCOperations
     }
 
     /// <inheritdoc />
-    public async Task<IDSCGetUnitResult> GetUnitAsync(ConfigurationUnitModel unit)
+    public async Task<IDSCGetUnitResult> GetUnitAsync(IDSCUnit inputUnit)
     {
+        if (inputUnit is not DSCUnit dscUnit)
+        {
+            throw new ArgumentException($"{nameof(inputUnit)} must be of type {nameof(DSCUnit)}", nameof(inputUnit));
+        }
+
         ConfigurationStaticFunctions config = new();
         var processor = await CreateConfigurationProcessorAsync(DSCv3DynamicRuntimeHandlerIdentifier);
-        var input = config.CreateConfigurationUnit();
-        input.Settings = unit.Settings;
-        input.Type = unit.Type;
-
-        var result = await Task.Run(() => processor.GetUnitSettings(input));
-        unit.Settings = result.Settings;
+        var result = await Task.Run(() => processor.GetUnitSettings(dscUnit.ConfigUnit));
         return new DSCGetUnitResult(result);
     }
 
     /// <inheritdoc />
-    public async Task<IDSCApplyUnitResult> SetUnitAsync(ConfigurationUnitModel unit)
+    public async Task<IDSCApplyUnitResult> SetUnitAsync(IDSCUnit inputUnit)
     {
+        if (inputUnit is not DSCUnit dscUnit)
+        {
+            throw new ArgumentException($"{nameof(inputUnit)} must be of type {nameof(DSCUnit)}", nameof(inputUnit));
+        }
+
         ConfigurationStaticFunctions config = new();
         var processor = await CreateConfigurationProcessorAsync(DSCv3DynamicRuntimeHandlerIdentifier);
-        var input = config.CreateConfigurationUnit();
-        input.Settings = unit.Settings;
-        input.Type = unit.Type;
-
-        var result = await Task.Run(() => processor.ApplyUnit(input));
+        var result = await Task.Run(() => processor.ApplyUnit(dscUnit.ConfigUnit));
         return new DSCApplyUnitResult(result);
     }
 
     /// <inheritdoc />
-    public async Task<IDSCTestUnitResult> TestUnitAsync(ConfigurationUnitModel unit)
+    public async Task<IDSCTestUnitResult> TestUnitAsync(IDSCUnit inputUnit)
     {
-        ConfigurationStaticFunctions config = new();
-        var processor = await CreateConfigurationProcessorAsync(DSCv3DynamicRuntimeHandlerIdentifier);
-        var input = config.CreateConfigurationUnit();
-        input.Settings = unit.Settings;
-        input.Type = unit.Type;
-        var result = await Task.Run(() => processor.TestUnit(input));
-        unit.TestResult = result.TestResult == ConfigurationTestResult.Positive;
-        return new DSCTestUnitResult(result);
-    }
-
-    /// <inheritdoc />
-    /// Currently broken due to bug in DSC
-    /// https://github.com/PowerShell/DSC/issues/786
-    public async Task<IDSCGetAllUnitsResult> ExportUnitAsync(ConfigurationUnitModel unit)
-    {
-        ConfigurationStaticFunctions config = new();
-        var processor = await CreateConfigurationProcessorAsync(DSCv3DynamicRuntimeHandlerIdentifier);
-        var input = config.CreateConfigurationUnit();
-        input.Type = unit.Type;
-        input.Intent = ConfigurationUnitIntent.Inform;
-        var result = processor.GetAllUnits(input);
-        if (result.Units != null)
+        if (inputUnit is not DSCUnit dscUnit)
         {
-            unit.Settings = result.Units[0].Settings;
+            throw new ArgumentException($"{nameof(inputUnit)} must be of type {nameof(DSCUnit)}", nameof(inputUnit));
         }
 
-        return new DSCGetAllUnitsResult(result);
+        ConfigurationStaticFunctions config = new();
+        var processor = await CreateConfigurationProcessorAsync(DSCv3DynamicRuntimeHandlerIdentifier);
+        var result = await Task.Run(() => processor.TestUnit(dscUnit.ConfigUnit));
+        return new DSCTestUnitResult(result);
     }
 
     public async Task<IReadOnlyList<ResourceMetada>> GetDscV3ResourcesAsync()
@@ -218,14 +235,18 @@ internal sealed class DSCOperations : IDSCOperations
     {
         var inputStream = await StringToStreamAsync(file.Content);
         var openConfigResult = processor.OpenConfigurationSet(inputStream);
-        var configSet = openConfigResult.Set ?? throw new OpenConfigurationSetException(openConfigResult.ResultCode, openConfigResult.Field, openConfigResult.Value);
+        var configSet = openConfigResult.Set ?? throw new OpenConfigurationSetException(openConfigResult);
 
         // Set input file path in the configuration set to inform the
         // processor about the working directory when applying the
         // configuration
-        configSet.Name = file.Name;
-        configSet.Origin = file.DirectoryPath;
-        configSet.Path = file.Path;
+        if (file.FileInfo != null)
+        {
+            configSet.Name = file.FileInfo.Name;
+            configSet.Origin = file.FileInfo.Directory.FullName;
+            configSet.Path = file.FileInfo.FullName;
+        }
+
         return configSet;
     }
 
@@ -301,5 +322,21 @@ internal sealed class DSCOperations : IDSCOperations
         // After GetSetDetailsAsync completes, the Details property will be
         // populated if the details were found.
         return new DSCUnitDetails(unitFound.Details);
+    }
+
+    /// <summary>
+    /// Applies a configuration set and reports progress.
+    /// </summary>
+    /// <param name="progress">Progress reporter</param>
+    /// <param name="dscSet">Configuration set to apply</param>
+    /// <param name="flags">Apply flags</param>
+    /// <returns>Apply result</returns>
+    private async Task<DSCApplySetResult> ApplySetInternalAsync(IProgress<IDSCSetChangeData> progress, DSCSet dscSet, ApplyConfigurationSetFlags flags)
+    {
+        var task = dscSet.Processor.ApplySetAsync(dscSet.ConfigSet, flags);
+        task.Progress += (sender, args) => progress.Report(new DSCSetChangeData(args));
+        var outOfProcResult = await task;
+        var result = new DSCApplySetResult(dscSet, outOfProcResult);
+        return result.IsOk ? result : throw new ApplyConfigurationSetException(result);
     }
 }

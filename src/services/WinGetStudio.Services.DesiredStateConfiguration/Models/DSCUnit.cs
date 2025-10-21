@@ -30,7 +30,7 @@ internal sealed class DSCUnit : IDSCUnit
     public string Description { get; }
 
     /// <inheritdoc/>
-    public bool RequiresElevation { get; }
+    public SecurityContext SecurityContext { get; }
 
     /// <inheritdoc/>
     public string Intent { get; }
@@ -39,13 +39,13 @@ internal sealed class DSCUnit : IDSCUnit
     public string ModuleName { get; }
 
     /// <inheritdoc/>
-    public IList<string> Dependencies { get; }
+    public ISet<string> Dependencies { get; }
 
     /// <inheritdoc/>
-    public IList<KeyValuePair<string, object>> Settings { get; }
+    public DSCPropertySet Settings { get; }
 
     /// <inheritdoc/>
-    public IList<KeyValuePair<string, string>> Metadata { get; }
+    public DSCPropertySet Metadata { get; }
 
     internal ConfigurationUnit ConfigUnit { get; }
 
@@ -61,18 +61,18 @@ internal sealed class DSCUnit : IDSCUnit
         Id = unit.Identifier;
         InstanceId = unit.InstanceIdentifier;
         Intent = unit.Intent.ToString();
-        Dependencies = [.. unit.Dependencies];
+        Dependencies = unit.Dependencies.ToHashSet();
 
         // Get description from settings
         unit.Metadata.TryGetValue(DescriptionMetadataKey, out var descriptionObj);
         Description = descriptionObj?.ToString() ?? string.Empty;
 
         // Get security context
-        RequiresElevation = GetRequiresElevation(unit);
+        SecurityContext = GetSecurityContext(unit);
 
         // Load dictionary values into list of key value pairs
-        Settings = unit.Settings.Select(s => new KeyValuePair<string, object>(s.Key, s.Value)).ToList();
-        Metadata = unit.Metadata.Select(m => new KeyValuePair<string, string>(m.Key, m.Value.ToString())).ToList();
+        Settings = new(unit.Settings);
+        Metadata = new(unit.Metadata);
 
         // Get module name from metadata
         ModuleName = Metadata.FirstOrDefault(m => m.Key == ModuleMetadataKey).Value?.ToString() ?? string.Empty;
@@ -99,21 +99,21 @@ internal sealed class DSCUnit : IDSCUnit
     }
 
     /// <summary>
-    /// Gets a value indicating whether the configuration unit requires elevated permissions to execute.
+    /// Gets the security context for the unit.
     /// </summary>
     /// <param name="unit">ConfigurationUnit unit</param>
-    /// <returns></returns>
-    public bool GetRequiresElevation(ConfigurationUnit unit)
+    /// <returns>The security context.</returns>
+    public SecurityContext GetSecurityContext(ConfigurationUnit unit)
     {
         // This property is not available in older version of winget.
         try
         {
-            return unit.Environment.Context == SecurityContext.Elevated;
+            return unit.Environment.Context;
         }
         catch
         {
-            // If we cannot determine the security context, default to not
-            return false;
+            // If we cannot determine the security context, return default option.
+            return default;
         }
     }
 }

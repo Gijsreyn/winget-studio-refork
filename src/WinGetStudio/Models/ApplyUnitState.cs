@@ -3,10 +3,11 @@
 
 namespace WinGetStudio.Models;
 
-public enum PropertyType
+public enum ApplyUnitState
 {
-    StringType,
-    BooleanType,
-    NumberType,
-    ObjectType,
+    NotStarted,
+    InProgress,
+    Succeeded,
+    Failed,
+    Skipped,
 }

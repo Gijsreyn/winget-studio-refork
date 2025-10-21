@@ -25,22 +25,7 @@ public sealed partial class ValidationPage : Page, IView<ValidationViewModel>
     private void CopyResultsToClipboard()
     {
         var dataPackage = new DataPackage();
-        dataPackage.SetText(ViewModel.RawData);
+        dataPackage.SetText(ViewModel.OutputText);
         Clipboard.SetContent(dataPackage);
-    }
-
-    /// <summary>
-    /// Opens the resource explorer dialog for the current resource.
-    /// </summary>
-    /// <param name="sender">The sender.</param>
-    /// <param name="e">The event args.</param>
-    private async void ExploreResource_Click(object sender, RoutedEventArgs e)
-    {
-        var resource = await ViewModel.OnExploreAsync();
-        if (resource != null)
-        {
-            ResourceExplorer dialog = new(resource) { XamlRoot = XamlRoot };
-            await dialog.ShowAsync();
-        }
     }
 }

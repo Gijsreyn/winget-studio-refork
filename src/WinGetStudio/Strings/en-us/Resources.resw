@@ -284,6 +284,27 @@
     <value>The field '{0}' is missing or empty.</value>
     <comment>{Locked="{0}"} An error in reading a configuration file. {0} is a placeholder replaced by the expected field name from the file.</comment>
   </data>
+  <data name="ConfigurationErrorLineAndRow" xml:space="preserve">
+    <value>(Line {0}, Column {1})</value>
+  </data>
+  <data name="ConfigurationTestFailed" xml:space="preserve">
+    <value>Some of the configuration units failed while testing their state.</value>
+  </data>
+  <data name="ConfigurationTestNotRun" xml:space="preserve">
+    <value>Configuration state was not tested.</value>
+  </data>
+  <data name="ConfigurationGetFailed" xml:space="preserve">
+    <value>The configuration unit failed getting its properties.</value>
+  </data>
+  <data name="ConfigurationUnitIsPartOfDependencyCycle" xml:space="preserve">
+    <value>This configuration unit is part of a dependency cycle.</value>
+  </data>
+  <data name="ConfigurationWarningNotAccepted" xml:space="preserve">
+    <value>The user declined to continue execution.</value>
+  </data>
+  <data name="ConfigurationSetDependencyCycle" xml:space="preserve">
+    <value>The dependency graph contains a cycle which cannot be resolved.</value>
+  </data>
   <data name="ConfigurationUnitAssertHadNegativeResult" xml:space="preserve">
     <value>The system is not in the desired state asserted by the configuration.</value>
   </data>
@@ -356,10 +377,10 @@
     <value>This configuration unit was not run for an unknown reason: {0}</value>
     <comment>{Locked="{0}"} {0} is a placeholder for the unrecognized error code.</comment>
   </data>
-  <data name="WinGetConfigUnitImportModuleAdmin" xml:space="preserve">
+  <data name="ConfigurationUnitImportModuleAdmin" xml:space="preserve">
     <value>Loading the module for the configuration unit failed because it requires administrator privileges to run.</value>
   </data>
-  <data name="WinGetConfigUnitSettingConfigRoot" xml:space="preserve">
+  <data name="ConfigurationUnitSettingConfigRoot" xml:space="preserve">
     <value>A unit contains a setting that requires the config root.</value>
   </data>
   <data name="ConfigurationUnitNotRunDueToFailedAssert" xml:space="preserve">
@@ -372,6 +393,13 @@
   <data name="ConfigurationFileInvalid" xml:space="preserve">
     <value>The configuration file is invalid.</value>
     <comment>An error in reading a configuration file.</comment>
+  </data>
+  <data name="ConfigurationYamlInvalid" xml:space="preserve">
+    <value>The configuration file is not a valid YAML file.</value>
+    <comment>An error in reading a configuration file.</comment>
+  </data>
+  <data name="ConfigurationSetApplyFailed" xml:space="preserve">
+    <value>An error occurred while applying the configuration.</value>
   </data>
   <data name="Shell_AI.Content" xml:space="preserve">
     <value>Generate a configuration file </value>
@@ -387,6 +415,9 @@
   </data>
   <data name="ValidationPage_ResultsText.Text" xml:space="preserve">
     <value>Results</value>
+  </data>
+  <data name="ValidationPage_SettingsText.Text" xml:space="preserve">
+    <value>Settings</value>
   </data>
   <data name="ValidationPage_TestResultHeader.Text" xml:space="preserve">
     <value>Test Result</value>
@@ -481,9 +512,6 @@
   <data name="ValidationPage_TestButton.Content" xml:space="preserve">
     <value>Test</value>
   </data>
-  <data name="PreviewPage_ModuleHeader.Header" xml:space="preserve">
-    <value>Module</value>
-  </data>
   <data name="PreviewPage_DescriptionHeader.Header" xml:space="preserve">
     <value>Description</value>
   </data>
@@ -493,38 +521,50 @@
   <data name="PreviewPage_Name.Text" xml:space="preserve">
     <value>Name: </value>
   </data>
-  <data name="PreviewPage_SaveDialog.PrimaryButtonText" xml:space="preserve">
-    <value>Save</value>
-  </data>
-  <data name="PreviewPage_SaveDialog.SecondaryButtonText" xml:space="preserve">
-    <value>Save As</value>
-  </data>
-  <data name="PreviewPage_SaveDialog.Title" xml:space="preserve">
-    <value>Unsaved Changes</value>
-  </data>
-  <data name="PreviewPage_SaveDialog.Content" xml:space="preserve">
-    <value>Unsaved changes need to be saved or discarded before switching out of edit mode</value>
-  </data>
-  <data name="PreviewPage_SaveDialog.CloseButtonText" xml:space="preserve">
-    <value>Discard</value>
-  </data>
-  <data name="PreviewPage_ApplyDialog.Title" xml:space="preserve">
-    <value>Warning of Terms</value>
-  </data>
-  <data name="PreviewPage_ApplyDialog.PrimaryButtonText" xml:space="preserve">
-    <value>I agree and continue</value>
-  </data>
-  <data name="PreviewPage_ApplyDialog.CloseButtonText" xml:space="preserve">
-    <value>Cancel</value>
-  </data>
-  <data name="PreviewPage_ApplyDialog.Content" xml:space="preserve">
+  <data name="PreviewPage_ApplyInfoBar.Message" xml:space="preserve">
     <value>You are responsible for understanding the configuration settings you are choosing to execute. Microsoft is not responsible for the configuration file you have authored or imported. This configuration may change settings in Windows, install software, change software settings (including security settings), and accept user agreements to third-party packages and services on your behalf. By running this configuration file, you acknowledge that you understand and agree to these resources and settings. Any applications installed are licensed to you by their owners. Microsoft is not responsible for, nor does it grant any licenses to, third-party packages or services.</value>
   </data>
   <data name="PreviewPage_SelectConfigurationFileMessage.Text" xml:space="preserve">
     <value>Select a configuration file</value>
   </data>
   <data name="PreviewPage_SelectConfigurationUnitMessage.Text" xml:space="preserve">
-    <value>Select a configuration unit</value>
+    <value>Select a configuration unit to edit</value>
+  </data>
+  <data name="PreviewPage_ValidateButton.Content" xml:space="preserve">
+    <value>Validate</value>
+  </data>
+  <data name="PreviewPage_NewConfiguration.Label" xml:space="preserve">
+    <value>New configuration</value>
+  </data>
+  <data name="PreviewPage_OpenConfiguration.Label" xml:space="preserve">
+    <value>Open configuration</value>
+  </data>
+  <data name="PreviewPage_Code.Label" xml:space="preserve">
+    <value>Code</value>
+  </data>
+  <data name="PreviewPage_Edit.Label" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="PreviewPage_AddResource.Label" xml:space="preserve">
+    <value>Add resource</value>
+  </data>
+  <data name="PreviewPage_Validate.Label" xml:space="preserve">
+    <value>Validate</value>
+  </data>
+  <data name="PreviewPage_Apply.Label" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="PreviewPage_Test.Label" xml:space="preserve">
+    <value>Test</value>
+  </data>
+  <data name="PreviewPage_Save.Label" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="PreviewPage_SaveAs.Label" xml:space="preserve">
+    <value>Save As</value>
+  </data>
+  <data name="PreviewPage_FilePicker_ConfigurationFiles" xml:space="preserve">
+    <value>Configuration files</value>
   </data>
   <data name="ConfigurationFile_SummaryView.Content" xml:space="preserve">
     <value>Summary view</value>
@@ -693,6 +733,72 @@
   </data>
   <data name="Settings_EditSettings.Text" xml:space="preserve">
     <value>Edit JSON file</value>
+  </data>
+  <data name="ApplySet_TotalUnitsCompleted" xml:space="preserve">
+    <value>{0}% Completed</value>
+  </data>
+  <data name="Unit_TitleCannotBeNullOrEmpty" xml:space="preserve">
+    <value>Title cannot be null or empty when creating configuration.</value>
+  </data>
+  <data name="File_PathCannotBeNullOrEmpty" xml:space="preserve">
+    <value>Cannot save a file without a valid file path.</value>
+  </data>
+  <data name="PreviewFile_SavedSuccessfully" xml:space="preserve">
+    <value>Configuration saved successfully</value>
+  </data>
+  <data name="PreviewFile_SaveFailed" xml:space="preserve">
+    <value>Failed to save configuration: {0}</value>
+  </data>
+  <data name="PreviewFile_CreateNewConfigurationFailed" xml:space="preserve">
+    <value>Creating new configuration set failed: {0}</value>
+  </data>
+  <data name="PreviewFile_SaveSuccessfulMessage" xml:space="preserve">
+    <value>Configuration saved successfully</value>
+  </data>
+  <data name="PreviewFile_SaveFailedMessage" xml:space="preserve">
+    <value>Saving configuration set failed: {0}</value>
+  </data>
+  <data name="PreviewFile_DeleteSuccessfulMessage" xml:space="preserve">
+    <value>Configuration unit deleted</value>
+  </data>
+  <data name="PreviewFile_DeleteFailedMessage" xml:space="preserve">
+    <value>Deleting configuration unit failed: {0}</value>
+  </data>
+  <data name="PreviewFile_AddResourceFailedMessage" xml:space="preserve">
+    <value>Adding new resource failed: {0}</value>
+  </data>
+  <data name="PreviewFile_ValidationSuccessfulMessage" xml:space="preserve">
+    <value>Configuration code is valid</value>
+  </data>
+  <data name="PreviewFile_ValidationFailedMessage" xml:space="preserve">
+    <value>Configuration unit updated</value>
+  </data>
+  <data name="PreviewFile_UpdateFailedMessage" xml:space="preserve">
+    <value>Updating configuration unit failed: {0}</value>
+  </data>
+  <data name="PreviewFile_ViewResultButton.Content" xml:space="preserve">
+    <value>View result</value>
+  </data>
+  <data name="PreviewFile_ApplyButton.Content" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="PreviewFile_DependenciesButton.Content" xml:space="preserve">
+    <value>Dependencies</value>
+  </data>
+  <data name="ApplyFile_DoneButton.Content" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="ApplyFile_BackButton.Content" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="PreviewFile_ResourceAutoSuggestBox.Header" xml:space="preserve">
+    <value>Resource type</value>
+  </data>
+  <data name="PreviewFile_SecurityContenxtComboBox.Header" xml:space="preserve">
+    <value>Security context</value>
+  </data>
+  <data name="PreviewFile_ResourceNameTextBox.Header" xml:space="preserve">
+    <value>Resource name</value>
   </data>
   <data name="MonacoEditor_OpenUriDialog.CloseButtonText" xml:space="preserve">
     <value>Close</value>

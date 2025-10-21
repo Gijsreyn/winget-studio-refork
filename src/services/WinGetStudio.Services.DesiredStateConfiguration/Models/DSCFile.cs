@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Localization;
 using WinGetStudio.Services.DesiredStateConfiguration.Contracts;
 
 namespace WinGetStudio.Services.DesiredStateConfiguration.Models;
@@ -13,13 +13,24 @@ namespace WinGetStudio.Services.DesiredStateConfiguration.Models;
 /// </summary>
 public sealed class DSCFile : IDSCFile
 {
-    private readonly FileInfo _fileInfo;
+    public FileInfo FileInfo { get; }
 
-    private DSCFile(string filePath, string content = null)
+    /// <inheritdoc/>
+    public string Content { get; }
+
+    private DSCFile(string content)
+        : this(null, content)
     {
-        _fileInfo = new FileInfo(filePath);
+    }
+
+    private DSCFile(FileInfo fileInfo, string content)
+    {
+        FileInfo = fileInfo;
         Content = content;
     }
+
+    /// <inheritdoc/>
+    public bool CanSave => FileInfo != null;
 
     /// <summary>
     /// Load a configuration file from a path.
@@ -28,41 +39,42 @@ public sealed class DSCFile : IDSCFile
     /// <returns>The configuration file.</returns>
     public static async Task<IDSCFile> LoadAsync(string filePath)
     {
-        var file = new DSCFile(filePath);
-        await file.LoadContentAsync();
-        return file;
+        var fileInfo = new FileInfo(filePath);
+        using var text = fileInfo.OpenText();
+        var content = await text.ReadToEndAsync();
+        return new DSCFile(fileInfo, content);
     }
 
     /// <summary>
     /// Create a virtual file with the specified content without writing to disk.
+    /// </summary>
+    /// <param name="content">Content of the file</param>
+    /// <returns>The configuration file.</returns>
+    public static IDSCFile CreateVirtual(string content)
+    {
+        return new DSCFile(content);
+    }
+
+    /// <summary>
+    /// Create a virtual file with the specified content and file path without writing to disk.
     /// </summary>
     /// <param name="filePath">The path to the file.</param>
     /// <param name="content">Content of the file</param>
     /// <returns>The configuration file.</returns>
     public static IDSCFile CreateVirtual(string filePath, string content)
     {
-        Debug.Assert(content != null, "Content must not be null");
-        return new DSCFile(filePath, content);
+        var fileInfo = new FileInfo(filePath);
+        return new DSCFile(fileInfo, content);
     }
 
     /// <inheritdoc/>
-    public string Name => _fileInfo.Name;
-
-    /// <inheritdoc/>
-    public string Path => _fileInfo.FullName;
-
-    /// <inheritdoc/>
-    public string DirectoryPath => _fileInfo.Directory.FullName;
-
-    /// <inheritdoc/>
-    public string Content { get; private set; }
-
-    /// <summary>
-    /// Load configuration file content
-    /// </summary>
-    private async Task LoadContentAsync()
+    public async Task SaveAsync(IStringLocalizer localizer)
     {
-        using var text = _fileInfo.OpenText();
-        Content = await text.ReadToEndAsync();
+        if (FileInfo == null)
+        {
+            throw new InvalidDataException(localizer["File_PathCannotBeNullOrEmpty"]);
+        }
+
+        await File.WriteAllTextAsync(FileInfo.FullName, Content);
     }
 }
