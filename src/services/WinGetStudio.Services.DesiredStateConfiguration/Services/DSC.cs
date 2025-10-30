@@ -40,7 +40,10 @@ internal sealed class DSC : IDSC
     public Task<IDSCTestSetResult> TestSetAsync(IDSCSet inputSet, IProgress<IDSCTestUnitResult> progress = null, CancellationToken ct = default) => _dscOperations.TestSetAsync(inputSet, progress, ct);
 
     /// <inheritdoc/>
-    public void GetConfigurationUnitDetails(IDSCSet set) => _dscOperations.GetConfigurationUnitDetails(set);
+    public Task<IDSCGetSetDetailsResult> GetSetDetailsAsync(IDSCSet dscSet, IProgress<IDSCGetUnitDetailsResult> progress = null, CancellationToken ct = default) => _dscOperations.GetSetDetailsAsync(dscSet, progress, ct);
+
+    /// <inheritdoc/>
+    public Task<IDSCGetUnitDetailsResult> GetUnitDetailsAsync(IDSCUnit unit, CancellationToken ct = default) => _dscOperations.GetUnitDetailsAsync(unit, ct);
 
     /// <inheritdoc/>
     public async Task<IDSCGetUnitResult> GetUnitAsync(IDSCUnit unit, CancellationToken ct) => await _dscOperations.GetUnitAsync(unit, ct);

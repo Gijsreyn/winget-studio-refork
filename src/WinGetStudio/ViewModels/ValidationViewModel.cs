@@ -18,14 +18,13 @@ using WingetStudio.Services.VisualFeedback.Models;
 
 namespace WinGetStudio.ViewModels;
 
-public delegate ValidationViewModel ValidationViewModelFactory();
-
 public partial class ValidationViewModel : ObservableRecipient, INavigationAware
 {
     private readonly IDSC _dsc;
     private readonly IUIFeedbackService _ui;
     private readonly IStringLocalizer<ValidationViewModel> _localizer;
     private readonly ILogger<ValidationViewModel> _logger;
+    private readonly UnitViewModelFactory _unitFactory;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GetCommand))]
@@ -46,12 +45,14 @@ public partial class ValidationViewModel : ObservableRecipient, INavigationAware
         IDSC dsc,
         IUIFeedbackService ui,
         IStringLocalizer<ValidationViewModel> localizer,
-        ILogger<ValidationViewModel> logger)
+        ILogger<ValidationViewModel> logger,
+        UnitViewModelFactory unitFactory)
     {
         _dsc = dsc;
         _ui = ui;
         _localizer = localizer;
         _logger = logger;
+        _unitFactory = unitFactory;
     }
 
     public void OnNavigatedTo(object parameter)
@@ -165,11 +166,9 @@ public partial class ValidationViewModel : ObservableRecipient, INavigationAware
     /// <returns>The created DSC unit.</returns>
     private async Task<IDSCUnit> CreateUnitAsync()
     {
-        var unit = new UnitViewModel(_localizer)
-        {
-            Title = SearchResourceText ?? string.Empty,
-            Settings = DSCPropertySet.FromYaml(SettingsText ?? string.Empty),
-        };
+        var unit = _unitFactory();
+        unit.Title = SearchResourceText ?? string.Empty;
+        unit.Settings = DSCPropertySet.FromYaml(SettingsText ?? string.Empty);
         var dscFile = DSCFile.CreateVirtual(unit.ToConfigurationV3().ToYaml());
         var dscSet = await _dsc.OpenConfigurationSetAsync(dscFile);
         return dscSet.Units[0];

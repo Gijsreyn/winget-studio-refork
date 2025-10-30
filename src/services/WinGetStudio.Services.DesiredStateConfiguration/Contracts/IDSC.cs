@@ -29,8 +29,11 @@ public interface IDSC
     /// <inheritdoc cref="IDSCOperations.TestSetAsync" />
     Task<IDSCTestSetResult> TestSetAsync(IDSCSet inputSet, IProgress<IDSCTestUnitResult> progress = null,  CancellationToken ct = default);
 
-    /// <inheritdoc cref="IDSCOperations.GetConfigurationUnitDetails" />
-    void GetConfigurationUnitDetails(IDSCSet dscSet);
+    /// <inheritdoc cref="IDSCOperations.GetSetDetailsAsync" />
+    Task<IDSCGetSetDetailsResult> GetSetDetailsAsync(IDSCSet dscSet, IProgress<IDSCGetUnitDetailsResult> progress = null, CancellationToken ct = default);
+
+    /// <inheritdoc cref="IDSCOperations.GetUnitDetailsAsync" />
+    Task<IDSCGetUnitDetailsResult> GetUnitDetailsAsync(IDSCUnit unit, CancellationToken ct = default);
 
     /// <inheritdoc cref="IDSCOperations.GetUnitAsync" />
     Task<IDSCGetUnitResult> GetUnitAsync(IDSCUnit unit, CancellationToken ct = default);
