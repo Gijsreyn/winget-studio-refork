@@ -389,12 +389,12 @@ function Restore-NuGet
         [switch]$UseInternal
     )
 
-    $nugetConfig = Join-Path (Split-Path $SolutionPath -Parent) "nuget.config"
+    $nugetConfig = Join-Path (Split-Path $SolutionPath -Parent) "nuget.public.config"
 
     if ($UseInternal)
     {
         Write-Verbose "Using internal NuGet configuration"
-        $nugetConfig = Join-Path (Split-Path $SolutionPath -Parent) "nuget.internal.config"
+        $nugetConfig = Join-Path (Split-Path $SolutionPath -Parent) "nuget.config"
     }
 
     $dotNetPath = (Get-Command "dotnet" -CommandType Application -ErrorAction SilentlyContinue).Source
